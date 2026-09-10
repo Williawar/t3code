@@ -113,6 +113,7 @@ import {
   threadTraversalDirectionFromCommand,
 } from "../keybindings";
 import { isModelPickerOpen } from "../modelPickerVisibility";
+import { useRecentThreadCycling } from "../hooks/useRecentThreadCycling";
 import { useShortcutModifierState } from "../shortcutModifierState";
 import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -3571,6 +3572,7 @@ export default function LegacySidebar() {
     updateThreadJumpHintsVisibility(shouldShowThreadJumpHintsNow);
   }, [shouldShowThreadJumpHintsNow, updateThreadJumpHintsVisibility]);
 
+  const cycleRecentThread = useRecentThreadCycling(routeThreadKey);
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
       const shortcutContext = getCurrentSidebarShortcutContext();
@@ -3584,12 +3586,15 @@ export default function LegacySidebar() {
         context: shortcutContext,
       });
       const traversalDirection = threadTraversalDirectionFromCommand(command);
-      if (traversalDirection !== null) {
-        const targetThreadKey = resolveAdjacentThreadId({
-          threadIds: orderedSidebarThreadKeys,
-          currentThreadId: routeThreadKey,
-          direction: traversalDirection,
-        });
+      if (traversalDirection !== null || command === "thread.cycleRecent") {
+        const targetThreadKey =
+          traversalDirection !== null
+            ? resolveAdjacentThreadId({
+                threadIds: orderedSidebarThreadKeys,
+                currentThreadId: routeThreadKey,
+                direction: traversalDirection,
+              })
+            : cycleRecentThread((threadKey) => sidebarThreadByKey.has(threadKey));
         if (!targetThreadKey) {
           return;
         }
@@ -3629,6 +3634,7 @@ export default function LegacySidebar() {
       window.removeEventListener("keydown", onWindowKeyDown);
     };
   }, [
+    cycleRecentThread,
     getCurrentSidebarShortcutContext,
     keybindings,
     navigateToThread,
