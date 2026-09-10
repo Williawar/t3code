@@ -8,6 +8,27 @@ import {
   recordThreadVisit,
 } from "../threadRecency";
 
+// Session-scoped on purpose: the thread sidebar unmounts on settings routes,
+// and Settings then back must not forget which threads were visited.
+let recencyState = EMPTY_THREAD_RECENCY_STATE;
+let walkEndListenersAttached = false;
+
+function attachWalkEndListeners(): void {
+  if (walkEndListenersAttached || typeof window === "undefined") return;
+  walkEndListenersAttached = true;
+  const endWalk = () => {
+    recencyState = endThreadRecencyWalk(recencyState);
+  };
+  window.addEventListener(
+    "keyup",
+    (event) => {
+      if (isModifierKeyName(event.key)) endWalk();
+    },
+    true,
+  );
+  window.addEventListener("blur", endWalk);
+}
+
 /**
  * Backs `thread.cycleRecent`. Records the routed thread as visited and ends an
  * in-progress walk when a modifier key is released or the window blurs, so a
@@ -15,35 +36,21 @@ import {
  * Ctrl+Tab flips between the two newest.
  */
 export function useRecentThreadCycling(routeThreadKey: string | null) {
-  const stateRef = useRef(EMPTY_THREAD_RECENCY_STATE);
   const routeThreadKeyRef = useRef(routeThreadKey);
 
   useEffect(() => {
     routeThreadKeyRef.current = routeThreadKey;
-    stateRef.current = recordThreadVisit(stateRef.current, routeThreadKey);
+    recencyState = recordThreadVisit(recencyState, routeThreadKey);
   }, [routeThreadKey]);
 
-  useEffect(() => {
-    const endWalk = () => {
-      stateRef.current = endThreadRecencyWalk(stateRef.current, routeThreadKeyRef.current);
-    };
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (isModifierKeyName(event.key)) endWalk();
-    };
-    window.addEventListener("keyup", onKeyUp, true);
-    window.addEventListener("blur", endWalk);
-    return () => {
-      window.removeEventListener("keyup", onKeyUp, true);
-      window.removeEventListener("blur", endWalk);
-    };
-  }, []);
+  useEffect(attachWalkEndListeners, []);
 
   return useCallback((isKnownThread: (threadKey: string) => boolean): string | null => {
-    const result = cycleRecentThread(stateRef.current, {
+    const result = cycleRecentThread(recencyState, {
       currentThreadKey: routeThreadKeyRef.current,
       isKnownThread,
     });
-    stateRef.current = result.state;
+    recencyState = result.state;
     return result.target;
   }, []);
 }

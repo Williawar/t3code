@@ -8,7 +8,7 @@ import {
   type ThreadRecencyState,
 } from "./threadRecency";
 
-const known = new Set(["a", "b", "c"]);
+const known = new Set(["a", "b", "c", "d"]);
 const isKnownThread = (key: string) => known.has(key);
 
 function visit(...keys: Array<string | null>): ThreadRecencyState {
@@ -29,11 +29,9 @@ describe("threadRecency", () => {
   });
 
   it("pressing again after release flips back", () => {
-    let state = visit("a", "b");
-    const first = cycleRecentThread(state, { currentThreadKey: "b", isKnownThread });
-    state = recordThreadVisit(first.state, first.target);
-    state = endThreadRecencyWalk(state, first.target);
-    const second = cycleRecentThread(state, { currentThreadKey: "a", isKnownThread });
+    const first = cycleRecentThread(visit("a", "b"), { currentThreadKey: "b", isKnownThread });
+    const released = recordThreadVisit(endThreadRecencyWalk(first.state), first.target);
+    const second = cycleRecentThread(released, { currentThreadKey: "a", isKnownThread });
     expect(second.target).toBe("b");
   });
 
@@ -41,10 +39,7 @@ describe("threadRecency", () => {
     let state = visit("a", "b", "c");
     const steps: Array<string | null> = [];
     for (let index = 0; index < 4; index += 1) {
-      const step = cycleRecentThread(state, {
-        currentThreadKey: steps.at(-1) ?? "c",
-        isKnownThread,
-      });
+      const step = cycleRecentThread(state, { currentThreadKey: "c", isKnownThread });
       // Route changes during the walk must not reorder the list.
       state = recordThreadVisit(step.state, step.target);
       steps.push(step.target);
@@ -52,13 +47,26 @@ describe("threadRecency", () => {
     expect(steps).toEqual(["b", "a", "c", "b"]);
   });
 
-  it("releasing the modifier promotes the landed thread", () => {
+  it("ending the walk promotes the landed thread even if the route has not caught up", () => {
     let state = visit("a", "b", "c");
-    const step = cycleRecentThread(state, { currentThreadKey: "c", isKnownThread });
-    state = cycleRecentThread(step.state, { currentThreadKey: step.target, isKnownThread }).state;
-    state = endThreadRecencyWalk(state, "a");
-    expect(state.walkIndex).toBeNull();
+    state = cycleRecentThread(state, { currentThreadKey: "c", isKnownThread }).state;
+    state = cycleRecentThread(state, { currentThreadKey: "c", isKnownThread }).state;
+    state = endThreadRecencyWalk(state);
+    expect(state.walkKey).toBeNull();
     expect(state.history).toEqual(["a", "c", "b"]);
+    // The route effect firing afterwards with the same thread is a no-op.
+    expect(recordThreadVisit(state, "a")).toBe(state);
+  });
+
+  it("keeps its place when an earlier entry disappears mid-walk", () => {
+    let state = visit("a", "b", "c", "d");
+    state = cycleRecentThread(state, { currentThreadKey: "d", isKnownThread }).state;
+    expect(state.walkKey).toBe("c");
+    const next = cycleRecentThread(state, {
+      currentThreadKey: "c",
+      isKnownThread: (key) => key !== "d" && isKnownThread(key),
+    });
+    expect(next.target).toBe("b");
   });
 
   it("skips threads that no longer exist", () => {

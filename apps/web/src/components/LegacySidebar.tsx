@@ -3573,6 +3573,12 @@ export default function LegacySidebar() {
   }, [shouldShowThreadJumpHintsNow, updateThreadJumpHintsVisibility]);
 
   const cycleRecentThread = useRecentThreadCycling(routeThreadKey);
+  // sidebarThreadByKey still holds archived threads; only rendered rows are
+  // valid cycle targets.
+  const orderedSidebarThreadKeySet = useMemo(
+    () => new Set(orderedSidebarThreadKeys),
+    [orderedSidebarThreadKeys],
+  );
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
       const shortcutContext = getCurrentSidebarShortcutContext();
@@ -3594,7 +3600,7 @@ export default function LegacySidebar() {
                 currentThreadId: routeThreadKey,
                 direction: traversalDirection,
               })
-            : cycleRecentThread((threadKey) => sidebarThreadByKey.has(threadKey));
+            : cycleRecentThread((threadKey) => orderedSidebarThreadKeySet.has(threadKey));
         if (!targetThreadKey) {
           return;
         }
@@ -3639,6 +3645,7 @@ export default function LegacySidebar() {
     keybindings,
     navigateToThread,
     orderedSidebarThreadKeys,
+    orderedSidebarThreadKeySet,
     platform,
     routeThreadKey,
     sidebarThreadByKey,
